@@ -1,0 +1,48 @@
+name: Windows-RDP-Tailscale
+
+on: 
+  workflow_dispatch: # Jalankan manual dari tab 'Actions'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: Download & Install Tailscale
+      run: |
+        Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+        Start-Process -FilePath .\tailscale-setup.exe -ArgumentList "/quiet" -Wait
+        
+    - name: Connect to Tailscale
+      shell: pwsh
+      run: |
+        # Hubungkan ke Tailscale menggunakan Auth Key
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey ${{ secrets.TAILSCALE_AUTHKEY }}
+        
+    - name: Enable Remote Desktop
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+        
+    - name: Create User & Password
+      run: |
+        # Mengatur password untuk user 'runneradmin'
+        $Password = ConvertTo-SecureString "P@ssw0rd123!" -AsPlainText -Force
+        Set-LocalUser -Name "runneradmin" -Password $Password
+        
+    - name: Check Disk Space (Info)
+      run: |
+        Get-PSDrive -PSProvider FileSystem
+        Write-Host "--- PENTING ---"
+        Write-Host "Gunakan Drive D:\ untuk menyimpan file besar (100GB+)"
+        Write-Host "Drive C:\ sangat sempit!"
+
+    - name: Keep Alive (6 Hours)
+      run: |
+        Write-Host "RDP Siap! Silakan konek via Tailscale IP menggunakan user: runneradmin"
+        $current_time = Get-Date
+        $end_time = $current_time.AddHours(6)
+        while ((Get-Date) -lt $end_time) {
+            Write-Host "Masih berjalan... $(( $end_time - (Get-Date) ).ToString('hh\:mm\:ss')) tersisa."
+            Start-Sleep -Seconds 60
+        }
