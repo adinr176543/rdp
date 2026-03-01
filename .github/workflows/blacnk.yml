@@ -1,0 +1,77 @@
+name: Windows-RDP-Tailscale-Ultimate
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: 1. Extreme Disk Cleanup (Hapus Chrome, Edge, & SDKs)
+      run: |
+        Write-Host "Membersihkan Drive C secara maksimal..."
+        # Hapus Chrome & Edge
+        $apps = @(
+            "C:\Program Files\Google\Chrome",
+            "C:\Program Files (x86)\Microsoft\Edge",
+            "C:\Program Files (x86)\Microsoft\EdgeUpdate"
+        )
+        # Hapus Heavy SDKs (Android, .NET, dll)
+        $tools = @(
+            "C:\Program Files (x86)\Android",
+            "C:\Program Files\dotnet",
+            "C:\Program Files\LLVM",
+            "C:\hostedtoolcache\windows"
+        )
+        foreach ($item in ($apps + $tools)) {
+            if (Test-Path $item) { Remove-Item -Recurse -Force $item -ErrorAction SilentlyContinue }
+        }
+
+    - name: 2. Create Extra Storage Link
+      run: |
+        # Membuat folder tambahan di C dan menghubungkannya ke D
+        New-Item -Path "C:\Data_Extra" -ItemType Directory
+        cmd /c mklink /J "D:\STORAGE_TAMBAHAN_C" "C:\Data_Extra"
+
+    - name: 3. Download Firefox to Drive D
+      run: |
+        Write-Host "Mengunduh Firefox Installer ke Drive D..."
+        $url = "https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US"
+        Invoke-WebRequest -Uri $url -OutFile "D:\FirefoxSetup.exe"
+        Write-Host "Installer siap di D:\FirefoxSetup.exe"
+
+    - name: 4. Install Tailscale
+      run: |
+        Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+        Start-Process -FilePath .\tailscale-setup.exe -ArgumentList "/quiet" -Wait
+        
+    - name: 5. Connect to Tailscale
+      shell: pwsh
+      run: |
+        # Pastikan TAILSCALE_AUTHKEY sudah ada di GitHub Secrets
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey ${{ secrets.TAILSCALE_AUTHKEY }}
+        
+    - name: 6. Configure RDP & User
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+        $Password = ConvertTo-SecureString "P@ssw0rd123!" -AsPlainText -Force
+        Set-LocalUser -Name "runneradmin" -Password $Password
+        
+    - name: 7. Final Storage Status
+      run: |
+        Get-PSDrive -PSProvider FileSystem
+        Write-Host "----------------------------------------------------"
+        Write-Host "RDP SIAP!"
+        Write-Host "1. Installer Browser ada di D:\FirefoxSetup.exe"
+        Write-Host "2. Gunakan D:\STORAGE_TAMBAHAN_C untuk sisa ruang (Total >200GB)"
+        Write-Host "----------------------------------------------------"
+
+    - name: 8. Keep Alive (6 Hours)
+      run: |
+        $end_time = (Get-Date).AddHours(6)
+        while ((Get-Date) -lt $end_time) {
+            Write-Host "Sisa waktu: $(( $end_time - (Get-Date) ).ToString('hh\:mm\:ss'))"
+            Start-Sleep -Seconds 60
+        }
