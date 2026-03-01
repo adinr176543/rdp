@@ -1,0 +1,63 @@
+name: Windows-RDP-Custom-Password
+
+on: 
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - name: 1. Fast Extreme Cleanup (Melegakan Drive C)
+      run: |
+        Write-Host "Membersihkan Drive C..."
+        $targets = @(
+            "C:\Program Files (x86)\Android",
+            "C:\Program Files\dotnet",
+            "C:\hostedtoolcache\windows",
+            "C:\Program Files\Google\Chrome",
+            "C:\Program Files (x86)\Microsoft\Edge"
+        )
+        foreach ($item in $targets) {
+            if (Test-Path $item) {
+                cmd /c "rd /s /q $item" 
+            }
+        }
+
+    - name: 2. Create Storage Bridge (Pintu ke Drive C)
+      run: |
+        New-Item -Path "C:\Data_76GB" -ItemType Directory
+        cmd /c mklink /J "D:\STORAGE_TAMBAHAN_C" "C:\Data_76GB"
+
+    - name: 3. Download Firefox Installer
+      run: |
+        $url = "https://download.mozilla.org/?product=firefox-latest-ssl&os=win64&lang=en-US"
+        Invoke-WebRequest -Uri $url -OutFile "D:\FirefoxSetup.exe"
+
+    - name: 4. Setup Tailscale
+      run: |
+        Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale-setup.exe
+        Start-Process -FilePath .\tailscale-setup.exe -ArgumentList "/quiet" -Wait
+        
+    - name: 5. Connect Tailscale
+      shell: pwsh
+      run: |
+        & "C:\Program Files\Tailscale\tailscale.exe" up --authkey ${{ secrets.TAILSCALE_AUTHKEY }}
+        
+    - name: 6. Configure RDP & New Password
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 1
+        
+        # PASSWORD SUDAH DIUBAH DI SINI
+        $Password = ConvertTo-SecureString "Adynr17@" -AsPlainText -Force
+        Set-LocalUser -Name "runneradmin" -Password $Password
+        
+    - name: 7. Keep Alive (6 Hours)
+      run: |
+        $end_time = (Get-Date).AddHours(6)
+        while ((Get-Date) -lt $end_time) {
+            $rem = $end_time - (Get-Date)
+            Write-Host "RDP Aktif - Sisa Waktu: $($rem.ToString('hh\:mm\:ss'))"
+            Start-Sleep -Seconds 60
+        }
